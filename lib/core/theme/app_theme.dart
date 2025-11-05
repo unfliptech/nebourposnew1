@@ -1,149 +1,108 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:nebourpos2/core/providers/core_providers.dart';
 
-import 'app_colors.dart';
+/// Optional JSON config for themes (can be null). Replace later with a repo.
+final themeConfigProvider = StateProvider<Map<String, dynamic>?>((_) => null);
 
-final themeConfigProvider =
-    FutureProvider<Map<String, dynamic>?>((ref) async {
-  final repository = ref.watch(themeRepositoryProvider);
-  return repository.loadThemeConfig();
-});
+/// Controls ThemeMode globally. You can wire a settings page to change this.
+final themeModeProvider = StateProvider<ThemeMode>((_) => ThemeMode.system);
 
+/// Exposes ThemeData for light/dark, built from optional themeConfig JSON.
 final appThemeProvider = Provider<AppThemeData>((ref) {
-  final themeConfig = ref.watch(themeConfigProvider).maybeWhen(
-        data: (value) => value,
-        orElse: () => null,
-      );
-  return AppThemeData(themeConfig: themeConfig);
-});
-
-final themeModeProvider = FutureProvider<ThemeMode>((ref) async {
-  final repository = ref.watch(themeRepositoryProvider);
-  return repository.loadThemeMode();
+  final cfg = ref.watch(themeConfigProvider);
+  return AppThemeData(themeConfig: cfg);
 });
 
 class AppThemeData {
   const AppThemeData({this.themeConfig});
-
   final Map<String, dynamic>? themeConfig;
 
   ThemeData get light {
-    final palette = _resolvePalette(
-      themeConfig?['light'],
-      defaults: _Palette(
-        primary: AppColors.primary,
-        accent: AppColors.secondary,
-        background: AppColors.background,
-        surface: AppColors.surface,
-        text: Colors.black87,
-      ),
-    );
-
+    final p = _resolve(themeConfig?['light'], _Palette.lightDefaults());
     final scheme = ColorScheme.fromSeed(
-      seedColor: palette.primary,
+      seedColor: p.primary,
       brightness: Brightness.light,
     ).copyWith(
-      primary: palette.primary,
-      secondary: palette.accent,
-      surface: palette.surface,
+      primary: p.primary,
+      secondary: p.accent,
+      surface: p.surface,
     );
 
     final base = ThemeData(
       colorScheme: scheme,
-      scaffoldBackgroundColor: palette.background,
+      scaffoldBackgroundColor: p.background,
       useMaterial3: true,
+      visualDensity: VisualDensity.compact,
+      dividerColor: scheme.outlineVariant,
     );
 
     return base.copyWith(
       textTheme: base.textTheme.apply(
-        bodyColor: palette.text,
-        displayColor: palette.text,
+        bodyColor: p.text,
+        displayColor: p.text,
       ),
       appBarTheme: AppBarTheme(
         centerTitle: false,
         elevation: 0,
-        backgroundColor: palette.background,
-        foregroundColor: palette.text,
+        backgroundColor: p.background,
+        foregroundColor: p.text,
       ),
-      cardColor: palette.surface,
+      cardColor: p.surface,
     );
   }
 
   ThemeData get dark {
-    final palette = _resolvePalette(
-      themeConfig?['dark'],
-      defaults: _Palette(
-        primary: AppColors.primaryDark,
-        accent: AppColors.secondary,
-        background: const Color(0xFF121212),
-        surface: const Color(0xFF1E1E1E),
-        text: Colors.white,
-      ),
-    );
-
+    final p = _resolve(themeConfig?['dark'], _Palette.darkDefaults());
     final scheme = ColorScheme.fromSeed(
-      seedColor: palette.primary,
+      seedColor: p.primary,
       brightness: Brightness.dark,
     ).copyWith(
-      primary: palette.primary,
-      secondary: palette.accent,
-      surface: palette.surface,
+      primary: p.primary,
+      secondary: p.accent,
+      surface: p.surface,
     );
 
     final base = ThemeData(
       colorScheme: scheme,
-      scaffoldBackgroundColor: palette.background,
+      scaffoldBackgroundColor: p.background,
       useMaterial3: true,
+      visualDensity: VisualDensity.compact,
+      dividerColor: scheme.outlineVariant,
     );
 
     return base.copyWith(
       textTheme: base.textTheme.apply(
-        bodyColor: palette.text,
-        displayColor: palette.text,
+        bodyColor: p.text,
+        displayColor: p.text,
       ),
       appBarTheme: AppBarTheme(
         centerTitle: false,
         elevation: 0,
-        backgroundColor: palette.background,
-        foregroundColor: palette.text,
+        backgroundColor: p.background,
+        foregroundColor: p.text,
       ),
-      cardColor: palette.surface,
+      cardColor: p.surface,
     );
   }
 
-  _Palette _resolvePalette(
-    dynamic data, {
-    required _Palette defaults,
-  }) {
-    if (data is! Map) {
-      return defaults;
-    }
-    Color parseColor(dynamic value, Color fallback) {
-      if (value is String && value.isNotEmpty) {
-        final normalized = value.startsWith('#') ? value.substring(1) : value;
-        final buffer = StringBuffer();
-        if (normalized.length == 6) {
-          buffer.write('FF$normalized');
-        } else if (normalized.length == 8) {
-          buffer.write(normalized);
-        } else {
-          return fallback;
-        }
-        final parsed = int.tryParse(buffer.toString(), radix: 16);
-        if (parsed != null) {
-          return Color(parsed);
-        }
+  _Palette _resolve(dynamic data, _Palette defaults) {
+    if (data is! Map) return defaults;
+    Color parse(dynamic v, Color fb) {
+      if (v is String && v.isNotEmpty) {
+        final n = v.startsWith('#') ? v.substring(1) : v;
+        final hex = (n.length == 6) ? 'FF$n' : (n.length == 8 ? n : null);
+        final val = hex == null ? null : int.tryParse(hex, radix: 16);
+        if (val != null) return Color(val);
       }
-      return fallback;
+      return fb;
     }
 
     return _Palette(
-      primary: parseColor(data['primary'], defaults.primary),
-      accent: parseColor(data['accent'], defaults.accent),
-      background: parseColor(data['background'], defaults.background),
-      surface: parseColor(data['surface'], defaults.surface),
-      text: parseColor(data['text'], defaults.text),
+      primary: parse(data['primary'], defaults.primary),
+      accent: parse(data['accent'], defaults.accent),
+      background: parse(data['background'], defaults.background),
+      surface: parse(data['surface'], defaults.surface),
+      text: parse(data['text'], defaults.text),
     );
   }
 }
@@ -162,4 +121,20 @@ class _Palette {
   final Color background;
   final Color surface;
   final Color text;
+
+  static _Palette lightDefaults() => const _Palette(
+        primary: Color(0xFFE53935),
+        accent: Color(0xFF3F8CFF),
+        background: Color(0xFFF6F7F9),
+        surface: Colors.white,
+        text: Colors.black87,
+      );
+
+  static _Palette darkDefaults() => const _Palette(
+        primary: Color(0xFFE53935),
+        accent: Color(0xFF3F8CFF),
+        background: Color(0xFF121212),
+        surface: Color(0xFF1E1E1E),
+        text: Colors.white,
+      );
 }

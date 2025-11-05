@@ -1,167 +1,156 @@
-import 'package:flutter/widgets.dart';
+// lib/router/app_router.dart
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../features/auth/presentation/screens/login_screen.dart';
-import '../features/auth/presentation/screens/passcode_screen.dart';
-import '../features/home/presentation/screens/home_screen.dart';
-import '../features/pos/presentation/screens/pos_shell_screen.dart';
-import '../features/splash/presentation/screens/splash_screen.dart';
-import '../features/sync/presentation/screens/offline_blocked_screen.dart';
-import 'route_guards.dart';
+import '../core/providers/shell_providers.dart';
+import '../core/providers/core_providers.dart'; // <-- auth + passcode state
+import '../shared/widgets/app_scaffold.dart';
+import 'route_guards.dart'; // keeps only PosRoute/PasscodeRoute/SplashRoute path helpers
+import '../features/splash/presentation/splash_screen.dart';
+import '../features/passcode/presentation/passcode_screen.dart';
+import '../dev/dev_passcode_actions.dart';
 
-final appRouterProvider = Provider<GoRouter>((ref) {
-  final guards = ref.watch(routeGuardsProvider);
-
+GoRouter createRouter(WidgetRef ref) {
   return GoRouter(
     initialLocation: SplashRoute.path,
+    // Single-source redirect logic (prevents loops)
+    redirect: (context, state) {
+      final loc = state.matchedLocation; // v14: use matchedLocation
+      final auth = ref.read(authStateProvider); // signedIn/signedOut
+      final isLocked =
+          ref.read(passcodeStatusProvider) == PasscodeStatus.locked;
+
+      // 1) Splash may always run its one-shot decision
+      if (loc == SplashRoute.path) return null;
+
+      // 2) If locked, force /passcode (no loop if we're already there)
+      if (isLocked) {
+        if (loc != PasscodeRoute.path) return PasscodeRoute.path;
+        return null;
+      }
+
+      // 3) While signed-out (dev flow, no sign-in yet), allow Home + Passcode
+      if (auth == AuthState.signedOut) {
+        if (loc == PosRoute.path || loc == PasscodeRoute.path) return null;
+        // Any other route -> bring user to Home (or Splash if you prefer)
+        return PosRoute.path;
+      }
+
+      // 4) Signed in & not locked: allow everything
+      return null;
+    },
     routes: [
+      // Splash stands alone (no shell)
       GoRoute(
         path: SplashRoute.path,
-        name: SplashRoute.name,
-        pageBuilder: (context, state) => _buildTransitionPage(
-          state: state,
-          child: const SplashScreen(),
-        ),
+        name: 'splash',
+        pageBuilder: (context, state) =>
+            const NoTransitionPage(child: SplashScreen()),
       ),
-      GoRoute(
-        path: HomeRoute.path,
-        name: HomeRoute.name,
-        pageBuilder: (context, state) => _buildTransitionPage(
-          state: state,
-          child: const HomeScreen(),
-        ),
-      ),
-      GoRoute(
-        path: PosRoute.path,
-        name: PosRoute.name,
-        pageBuilder: (context, state) => _buildTransitionPage(
-          state: state,
-          child: PosShellScreen(
-            initialSectionKey: state.uri.queryParameters['section'],
-            initialSubTypeKey: state.uri.queryParameters['subType'],
+
+      // Everything else inside the app shell
+      ShellRoute(
+        builder: (context, state, child) => AppScaffold(body: child),
+        routes: [
+          GoRoute(
+            path: PosRoute.path,
+            name: 'home',
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: _HomeScreen()),
           ),
-        ),
-      ),
-      GoRoute(
-        path: SignInRoute.path,
-        name: SignInRoute.name,
-        pageBuilder: (context, state) => _buildTransitionPage(
-          state: state,
-          child: const SignInScreen(),
-        ),
-      ),
-      GoRoute(
-        path: PasscodeRoute.path,
-        name: PasscodeRoute.name,
-        pageBuilder: (context, state) => _buildTransitionPage(
-          state: state,
-          child: const PasscodeScreen(),
-        ),
-      ),
-      GoRoute(
-        path: OfflineRoute.path,
-        name: OfflineRoute.name,
-        pageBuilder: (context, state) => _buildTransitionPage(
-          state: state,
-          child: const OfflineBlockedScreen(),
-        ),
+          GoRoute(
+            path: PasscodeRoute.path,
+            name: 'passcode',
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: PasscodeScreen()),
+          ),
+        ],
       ),
     ],
-    redirect: guards.redirect,
-    refreshListenable: guards,
-    debugLogDiagnostics: false,
+    observers: [
+      _TitleObserver(ref),
+    ],
   );
-});
-
-@immutable
-class SplashRoute {
-  const SplashRoute._();
-
-  static const name = 'splash';
-  static const path = '/';
 }
 
-@immutable
-class HomeRoute {
-  const HomeRoute._();
+class _TitleObserver extends NavigatorObserver {
+  _TitleObserver(this.ref);
+  final WidgetRef ref;
 
-  static const name = 'home';
-  static const path = '/home';
-}
+  @override
+  void didPush(Route route, Route? previousRoute) {
+    _maybeSet(route);
+    super.didPush(route, previousRoute);
+  }
 
-@immutable
-class PosRoute {
-  const PosRoute._();
+  @override
+  void didReplace({Route? newRoute, Route? oldRoute}) {
+    if (newRoute != null) _maybeSet(newRoute);
+    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
+  }
 
-  static const name = 'pos';
-  static const path = '/pos';
-
-  static String pathFor({String? sectionKey, String? subTypeKey}) {
-    final params = <String, String>{};
-    if (sectionKey != null && sectionKey.isNotEmpty) {
-      params['section'] = sectionKey;
+  void _maybeSet(Route route) {
+    final settings = route.settings;
+    if (settings is Page &&
+        settings.name != null &&
+        settings.name!.isNotEmpty) {
+      final current = ref.read(pageTitleProvider);
+      if (current == 'Nebour POS') {
+        ref.read(pageTitleProvider.notifier).state = settings.name!;
+      }
     }
-    if (subTypeKey != null && subTypeKey.isNotEmpty) {
-      params['subType'] = subTypeKey;
-    }
-    if (params.isEmpty) return path;
-    return Uri(path: path, queryParameters: params).toString();
   }
 }
 
-@immutable
-class SignInRoute {
-  const SignInRoute._();
+/// Helper to set dynamic page titles from screens.
+class SetPageTitle extends ConsumerStatefulWidget {
+  const SetPageTitle({super.key, required this.title, required this.child});
+  final String title;
+  final Widget child;
 
-  static const name = 'sign-in';
-  static const path = '/sign-in';
+  @override
+  ConsumerState<SetPageTitle> createState() => _SetPageTitleState();
 }
 
-@immutable
-class PasscodeRoute {
-  const PasscodeRoute._();
+class _SetPageTitleState extends ConsumerState<SetPageTitle> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => ref.read(pageTitleProvider.notifier).state = widget.title,
+    );
+  }
 
-  static const name = 'passcode';
-  static const path = '/passcode';
+  @override
+  void didUpdateWidget(covariant SetPageTitle oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.title != widget.title) {
+      ref.read(pageTitleProvider.notifier).state = widget.title;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
-@immutable
-class OfflineRoute {
-  const OfflineRoute._();
+class _HomeScreen extends StatelessWidget {
+  const _HomeScreen();
 
-  static const name = 'offline-blocked';
-  static const path = '/offline';
-}
-
-CustomTransitionPage<void> _buildTransitionPage({
-  required GoRouterState state,
-  required Widget child,
-}) {
-  return CustomTransitionPage<void>(
-    key: state.pageKey,
-    transitionDuration: const Duration(milliseconds: 200),
-    reverseTransitionDuration: const Duration(milliseconds: 150),
-    transitionsBuilder: (context, animation, secondaryAnimation, child) {
-      const beginOffset = Offset(0.1, 0.0); // subtle slide from right
-      const endOffset = Offset.zero;
-      final slideAnimation = Tween<Offset>(begin: beginOffset, end: endOffset)
-          .animate(CurvedAnimation(
-        parent: animation,
-        curve: Curves.easeOutCubic,
-      ));
-
-      final fadeAnimation =
-          CurvedAnimation(parent: animation, curve: Curves.easeInOut);
-
-      return SlideTransition(
-        position: slideAnimation,
-        child: FadeTransition(
-          opacity: fadeAnimation,
-          child: child,
+  @override
+  Widget build(BuildContext context) {
+    return SetPageTitle(
+      title: 'Home',
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Text('Nebour POS — Home'),
+            SizedBox(height: 12),
+            DevPasscodeActions(), // debug: set passcode & lock / lock-only
+          ],
         ),
-      );
-    },
-    child: child,
-  );
+      ),
+    );
+  }
 }

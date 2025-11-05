@@ -1,30 +1,41 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-class SecureStorage {
-  SecureStorage({
-    FlutterSecureStorage? storage,
-  }) : _storage = storage ??
-            const FlutterSecureStorage(
-              aOptions: AndroidOptions(
-                encryptedSharedPreferences: true,
-              ),
-            );
+/// Canonical secure storage keys
+class SK {
+  // Auth
+  static const authAccessToken = 'auth.access_token';
+  static const authTokenType = 'auth.token_type';
+  static const authExpiresAt = 'auth.expires_at';
+  static const tenantId = 'auth.tenant_id';
+  static const branchId = 'auth.branch_id';
 
-  final FlutterSecureStorage _storage;
+  // Device
+  static const deviceToken = 'device.device_token';
+  static const devicePosMode = 'device.pos_mode';
+  static const deviceInputType = 'device.input_type';
 
-  Future<void> write(String key, String value) {
-    return _storage.write(key: key, value: value);
-  }
+  // Security
+  static const isPasscodeRequired =
+      'security.is_passcode_required'; // "true" | "false"
+  static const passcodeHint = 'security.passcode_hint';
+  static const passcodeValue = 'security.passcode_value'; // <-- NEW
 
-  Future<String?> read(String key) {
-    return _storage.read(key: key);
-  }
+  // Sync
+  static const lastSyncedAt = 'sync.last_synced_at';
+}
 
-  Future<void> delete(String key) {
-    return _storage.delete(key: key);
-  }
+class SecureStore {
+  SecureStore([FlutterSecureStorage? impl])
+      : _impl = impl ?? const FlutterSecureStorage();
 
-  Future<void> clear() {
-    return _storage.deleteAll();
-  }
+  final FlutterSecureStorage _impl;
+
+  Future<void> write(String key, String value) =>
+      _impl.write(key: key, value: value);
+
+  Future<String?> read(String key) => _impl.read(key: key);
+
+  Future<void> delete(String key) => _impl.delete(key: key);
+
+  Future<void> deleteAll() => _impl.deleteAll();
 }

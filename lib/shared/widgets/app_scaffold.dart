@@ -1,32 +1,25 @@
 import 'package:flutter/material.dart';
 
-class AppScaffold extends StatelessWidget {
-  const AppScaffold({
-    super.key,
-    required this.body,
-    this.appBar,
-    this.floatingActionButton,
-    this.backgroundColor,
-    this.drawer,
-    this.scaffoldKey,
-  });
+import 'custom_title_bar.dart';
+import 'app_header_bar.dart';
+import 'custom_footer_bar.dart';
 
+/// Single global Scaffold. All pages render inside [body].
+class AppScaffold extends StatelessWidget {
+  const AppScaffold({super.key, required this.body});
   final Widget body;
-  final PreferredSizeWidget? appBar;
-  final Widget? floatingActionButton;
-  final Color? backgroundColor;
-  final Widget? drawer;
-  final GlobalKey<ScaffoldState>? scaffoldKey;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      key: scaffoldKey,
-      appBar: appBar,
-      backgroundColor: backgroundColor ?? Theme.of(context).colorScheme.surface,
-      body: SafeArea(child: body),
-      floatingActionButton: floatingActionButton,
-      drawer: drawer,
+      body: Column(
+        children: [
+          const CustomTitleBar(), // window chrome
+          const AppHeaderBar(), // in-app header with logo + title
+          Expanded(child: body), // content
+          const CustomFooterBar(),
+        ],
+      ),
     );
   }
 }
